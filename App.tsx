@@ -5,16 +5,20 @@ import { QuizScreen } from './components/QuizScreen';
 import { ResultScreen } from './components/ResultScreen';
 import { SpeakingPracticeScreen } from './components/SpeakingPracticeScreen';
 import { DialogueScreen } from './components/DialogueScreen';
-import { AppMode, WordPair, QuizConfig, QuizResult, WordLibrary, TestRecord } from './types';
+import { AuthScreen } from './components/AuthScreen';
+import { AdminDashboard } from './components/AdminDashboard';
+import { AppMode, WordPair, QuizConfig, QuizResult, WordLibrary, TestRecord, User, DailyContent } from './types';
+import { StorageService } from './services/storageService';
+import { generateDailyContent } from './services/geminiService';
+import { LogOut, User as UserIcon, ShieldCheck } from 'lucide-react';
 
-// Default placeholder words
+// Default placeholder words (Only used if new user has no data)
 const DEFAULT_WORDS: WordPair[] = [
   { id: '1', english: 'Apple', chinese: '苹果', category: 'Food' },
   { id: '2', english: 'Bicycle', chinese: '自行车', category: 'Transport' },
   { id: '3', english: 'Library', chinese: '图书馆', category: 'Places' },
 ];
 
-// Initial Library Data
 const INITIAL_LIBRARY: WordLibrary = {
   'Uncategorized': [],
   'Food': [
@@ -33,16 +37,84 @@ const INITIAL_LIBRARY: WordLibrary = {
 };
 
 const App: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<AppMode>(AppMode.SETUP);
   const [activeWords, setActiveWords] = useState<WordPair[]>(DEFAULT_WORDS);
+  
   const [library, setLibrary] = useState<WordLibrary>(INITIAL_LIBRARY);
   const [testHistory, setTestHistory] = useState<TestRecord[]>([]);
+  
   const [quizConfig, setQuizConfig] = useState<QuizConfig | null>(null);
   const [lastResults, setLastResults] = useState<QuizResult[]>([]);
   
   // State to pass text to speaking mode
   const [speakingInitialText, setSpeakingInitialText] = useState<string | undefined>(undefined);
   const [dialogueTopic, setDialogueTopic] = useState<string>('');
+
+  // Daily Content
+  const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
+
+  // 1. Check for valid session on mount and Load Daily Content
+  useEffect(() => {
+    const session = StorageService.getSession();
+    if (session) {
+      handleLogin(session);
+    }
+    loadDailyContent();
+  }, []);
+
+  const loadDailyContent = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const stored = localStorage.getItem('sdb_daily_content');
+    
+    if (stored) {
+      const parsed: DailyContent = JSON.parse(stored);
+      if (parsed.date === today) {
+        setDailyContent(parsed);
+        return;
+      }
+    }
+
+    // Generate new if missing or old
+    try {
+      const content = await generateDailyContent(today);
+      if (content) {
+        setDailyContent(content);
+        localStorage.setItem('sdb_daily_content', JSON.stringify(content));
+      }
+    } catch (e) {
+      console.error("Failed to load daily content", e);
+    }
+  };
+
+  // 2. Load User Data when User changes
+  const handleLogin = (loggedInUser: User) => {
+    setUser(loggedInUser);
+    const data = StorageService.loadUserData(loggedInUser.id);
+    if (data) {
+      setLibrary(data.library);
+      setTestHistory(data.history);
+    } else {
+      // New user data initialization
+      setLibrary(INITIAL_LIBRARY);
+      setTestHistory([]);
+    }
+    setMode(AppMode.SETUP);
+  };
+
+  const handleLogout = () => {
+    StorageService.clearSession();
+    setUser(null);
+    setLibrary(INITIAL_LIBRARY); // Reset to default
+    setTestHistory([]);
+  };
+
+  // 3. Persist Data whenever Library or History changes
+  useEffect(() => {
+    if (user) {
+      StorageService.saveUserData(user.id, { library, history: testHistory });
+    }
+  }, [library, testHistory, user]);
 
   const handleStartQuiz = (words: WordPair[], config: QuizConfig) => {
     setActiveWords(words);
@@ -125,6 +197,7 @@ const App: React.FC = () => {
     setLibrary(prev => {
       const targetCategory = category || 'Uncategorized';
       const existingList = prev[targetCategory] || [];
+      // Prevent duplicates by English text
       if (existingList.some(w => w.english.toLowerCase() === word.english.toLowerCase())) {
         return prev;
       }
@@ -135,6 +208,10 @@ const App: React.FC = () => {
     });
   };
 
+  if (!user) {
+    return <AuthScreen onLogin={handleLogin} dailyContent={dailyContent} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 selection:bg-indigo-100 selection:text-indigo-900">
       {/* Navbar / Header */}
@@ -144,11 +221,38 @@ const App: React.FC = () => {
             <span className="bg-indigo-600 text-white rounded-lg p-1.5">SD</span>
             <span className="hidden sm:inline">Smart Dictation</span>
           </div>
-          {mode !== AppMode.SETUP && (
-             <button onClick={handleHome} className="text-slate-400 hover:text-slate-600 text-sm font-semibold">
-                Exit / Home
+          
+          <div className="flex items-center gap-4">
+             {user && (
+               <div className="hidden sm:flex items-center gap-2 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+                 <UserIcon size={16} />
+                 <span className="text-sm font-bold text-slate-700">{user.username}</span>
+               </div>
+             )}
+
+             {user.isAdmin && (
+               <button 
+                  onClick={() => setMode(AppMode.ADMIN)}
+                  className="flex items-center gap-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors text-sm font-bold border border-indigo-200 shadow-sm"
+               >
+                 <ShieldCheck size={16} /> Admin Panel
+               </button>
+             )}
+             
+             {mode !== AppMode.SETUP && (
+               <button onClick={handleHome} className="text-slate-400 hover:text-slate-600 text-sm font-semibold">
+                  Exit
+               </button>
+             )}
+
+             <button 
+                onClick={handleLogout} 
+                className="flex items-center gap-1 text-rose-500 hover:bg-rose-50 px-3 py-1.5 rounded-lg transition-colors text-sm font-bold"
+                title="Logout"
+             >
+                <LogOut size={16} /> <span className="hidden sm:inline">Logout</span>
              </button>
-          )}
+          </div>
         </div>
       </header>
 
@@ -158,6 +262,7 @@ const App: React.FC = () => {
             initialWords={activeWords} 
             library={library}
             testHistory={testHistory}
+            dailyContent={dailyContent}
             onStart={handleStartQuiz}
             onStartSpeaking={handleStartSpeaking}
             onStartDialogue={handleStartDialogue}
@@ -199,6 +304,13 @@ const App: React.FC = () => {
             onBack={handleHome}
             categories={Object.keys(library)}
             onAddToLibrary={handleAddToLibrary}
+          />
+        )}
+
+        {mode === AppMode.ADMIN && user.isAdmin && (
+          <AdminDashboard 
+            currentUser={user}
+            onBack={handleHome}
           />
         )}
       </main>

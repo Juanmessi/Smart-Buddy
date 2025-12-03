@@ -24,7 +24,8 @@ export enum AppMode {
   QUIZ = 'QUIZ',
   RESULT = 'RESULT',
   SPEAKING = 'SPEAKING',
-  DIALOGUE = 'DIALOGUE', // New Mode
+  DIALOGUE = 'DIALOGUE',
+  ADMIN = 'ADMIN', // New Mode
 }
 
 export enum LanguageMode {
@@ -72,4 +73,26 @@ export interface ChatMessage {
   role: 'user' | 'ai';
   text: string;
   audioBase64?: string; // Cache audio for replay
+}
+
+// User Account
+export interface User {
+  id: string;
+  username: string;
+  password?: string; // In a real app, hash this. Plain text for local demo.
+  createdAt: number;
+  isAdmin?: boolean; // Admin Flag
+}
+
+// Daily Content
+export interface DailyQuote {
+  english: string;
+  chinese: string;
+  author: string;
+}
+
+export interface DailyContent {
+  date: string; // YYYY-MM-DD
+  quotes: DailyQuote[];
+  article: GeneratedPassage;
 }

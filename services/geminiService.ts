@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Modality, Type } from "@google/genai";
-import { WordPair, TranslationOption, GeneratedPassage, SpeakingEvaluation, ChatMessage } from "../types";
+import { WordPair, TranslationOption, GeneratedPassage, SpeakingEvaluation, ChatMessage, DailyContent } from "../types";
 
 const API_KEY = process.env.API_KEY || '';
 
@@ -359,10 +359,6 @@ export const simpleTranslate = async (text: string): Promise<string> => {
 export const generateChatResponse = async (history: ChatMessage[], topic: string): Promise<string> => {
   const ai = getAI();
   
-  // Construct the prompt with history
-  // Note: We are manually constructing the "Chat" here for the stateless generateContent model
-  // to ensure specific system instructions are followed per turn.
-  
   let promptHistory = `You are a helpful and friendly English tutor roleplaying a scenario with a student.
   Scenario: ${topic}.
   Your Goal: Engage in a natural conversation. Keep responses concise (1-3 sentences). Correct the user gently only if they make a major mistake, otherwise just continue the conversation.
@@ -387,3 +383,71 @@ export const generateChatResponse = async (history: ChatMessage[], topic: string
     return "Sorry, I lost my train of thought.";
   }
 };
+
+/**
+ * Generates Daily Content: 3 Quotes and 1 Article
+ */
+export const generateDailyContent = async (dateStr: string): Promise<DailyContent | null> => {
+  const ai = getAI();
+  try {
+    const prompt = `Generate content for a language learning app for the date ${dateStr}.
+    1. Provide 3 famous or inspiring quotes in English with Chinese translations and author name.
+    2. Write a short, interesting article (approx 150 words) on a general positive topic (e.g. nature, science, habit, kindness).
+    
+    Return JSON format only.`;
+
+    const response = await ai.models.generateContent({
+      model: GENERATION_MODEL,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            quotes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  english: { type: Type.STRING },
+                  chinese: { type: Type.STRING },
+                  author: { type: Type.STRING }
+                }
+              }
+            },
+            article: {
+              type: Type.OBJECT,
+              properties: {
+                 title: { type: Type.STRING },
+                 content: { type: Type.STRING },
+                 vocabulary: { 
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                         english: { type: Type.STRING },
+                         chinese: { type: Type.STRING }
+                      }
+                    }
+                 }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!response.text) return null;
+    const data = JSON.parse(response.text);
+
+    return {
+      date: dateStr,
+      quotes: data.quotes,
+      article: data.article
+    };
+
+  } catch (e) {
+    console.error("Daily Gen Error", e);
+    return null;
+  }
+}
