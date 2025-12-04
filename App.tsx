@@ -12,36 +12,12 @@ import { StorageService } from './services/storageService';
 import { generateDailyContent } from './services/geminiService';
 import { LogOut, User as UserIcon, ShieldCheck } from 'lucide-react';
 
-// Default placeholder words (Only used if new user has no data)
-const DEFAULT_WORDS: WordPair[] = [
-  { id: '1', english: 'Apple', chinese: '苹果', category: 'Food' },
-  { id: '2', english: 'Bicycle', chinese: '自行车', category: 'Transport' },
-  { id: '3', english: 'Library', chinese: '图书馆', category: 'Places' },
-];
-
-const INITIAL_LIBRARY: WordLibrary = {
-  'Uncategorized': [],
-  'Food': [
-    { id: 'l1', english: 'Apple', chinese: '苹果', category: 'Food' },
-    { id: 'l2', english: 'Banana', chinese: '香蕉', category: 'Food' },
-    { id: 'l3', english: 'Bread', chinese: '面包', category: 'Food' },
-  ],
-  'Animals': [
-    { id: 'l4', english: 'Cat', chinese: '猫', category: 'Animals' },
-    { id: 'l5', english: 'Dog', chinese: '狗', category: 'Animals' },
-  ],
-  'School': [
-    { id: 'l6', english: 'Pencil', chinese: '铅笔', category: 'School' },
-    { id: 'l7', english: 'Teacher', chinese: '老师', category: 'School' },
-  ]
-};
-
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<AppMode>(AppMode.SETUP);
-  const [activeWords, setActiveWords] = useState<WordPair[]>(DEFAULT_WORDS);
+  const [activeWords, setActiveWords] = useState<WordPair[]>([]);
   
-  const [library, setLibrary] = useState<WordLibrary>(INITIAL_LIBRARY);
+  const [library, setLibrary] = useState<WordLibrary>({});
   const [testHistory, setTestHistory] = useState<TestRecord[]>([]);
   
   const [quizConfig, setQuizConfig] = useState<QuizConfig | null>(null);
@@ -94,10 +70,16 @@ const App: React.FC = () => {
     if (data) {
       setLibrary(data.library);
       setTestHistory(data.history);
+      
+      // Auto-populate active words with a few items from the library to prevent empty screen
+      const allWords = Object.values(data.library).flat();
+      const sample = allWords.slice(0, 5);
+      setActiveWords(sample.length > 0 ? sample : []);
     } else {
-      // New user data initialization
-      setLibrary(INITIAL_LIBRARY);
+      // Should ideally not happen for new users as StorageService.register handles initialization
+      setLibrary({'Uncategorized': []});
       setTestHistory([]);
+      setActiveWords([]);
     }
     setMode(AppMode.SETUP);
   };
@@ -105,8 +87,9 @@ const App: React.FC = () => {
   const handleLogout = () => {
     StorageService.clearSession();
     setUser(null);
-    setLibrary(INITIAL_LIBRARY); // Reset to default
+    setLibrary({}); 
     setTestHistory([]);
+    setActiveWords([]);
   };
 
   // 3. Persist Data whenever Library or History changes
